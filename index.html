@@ -250,9 +250,10 @@
                 width: 48%;
                 height: auto;
                 padding: 12px;
-                transform: none !important;
                 border-radius: 10px;
                 box-shadow: 0 12px 24px rgba(0,0,0,0.45);
+                transform-style: preserve-3d;
+                transition: transform 1s cubic-bezier(0.645, 0.045, 0.355, 1);
             }
 
             .front, .back {
@@ -260,11 +261,13 @@
                 width: 100%;
                 height: auto;
                 padding: 10px;
+                backface-visibility: hidden;
             }
 
-            /* On mobile show the front faces only so two pages are visible */
-            .page .back { display: none; }
-            .page .front { display: block; }
+            /* On mobile show the front faces initially so two pages are visible; backs are present for flip animation */
+            .page .back { transform: rotateY(180deg); }
+            .page.left { transform-origin: right; }
+            .page.right { transform-origin: left; }
 
             .photo-frame {
                 width: 90%;
@@ -429,6 +432,101 @@
                 music.currentTime = 0;
             }
         });
+
+        // Booklet mobile paging and flipping
+        const allPages = Array.from(document.querySelectorAll('.page'));
+        let spreads = [];
+        for (let i = 0; i < allPages.length; i += 2) {
+            spreads.push([allPages[i], allPages[i + 1] || null]);
+        }
+        let currentSpread = 0;
+
+        function showSpread(index) {
+            currentSpread = index;
+            // hide all pages
+            allPages.forEach(p => {
+                p.style.display = 'none';
+                p.classList.remove('left', 'right');
+                p.classList.remove('flipped');
+            });
+            const pair = spreads[index];
+            if (!pair) return;
+            const [left, right] = pair;
+            if (left) {
+                left.style.display = 'block';
+                left.classList.add('left');
+            }
+            if (right) {
+                right.style.display = 'block';
+                right.classList.add('right');
+            }
+        }
+
+        function goNext() {
+            if (currentSpread < spreads.length - 1) {
+                // flip right page visually then advance
+                const right = spreads[currentSpread][1];
+                if (right) {
+                    right.classList.add('flipped');
+                    right.addEventListener('transitionend', function handler() {
+                        right.removeEventListener('transitionend', handler);
+                        showSpread(currentSpread + 1);
+                    });
+                } else {
+                    showSpread(currentSpread + 1);
+                }
+            }
+        }
+
+        function goPrev() {
+            if (currentSpread > 0) {
+                // flip left page back then go to prev
+                const prevPair = spreads[currentSpread - 1];
+                const rightOfPrev = prevPair[1];
+                if (rightOfPrev) {
+                    // ensure right page is present to flip back
+                    showSpread(currentSpread - 1);
+                    rightOfPrev.classList.remove('flipped');
+                } else {
+                    showSpread(currentSpread - 1);
+                }
+            }
+        }
+
+        function arrangeForViewport() {
+            if (window.matchMedia('(max-width: 480px)').matches) {
+                showSpread(0);
+                // remove inline onclick handlers so we control behavior
+                allPages.forEach(p => p.removeAttribute('onclick'));
+                // attach mobile handlers
+                allPages.forEach((p) => {
+                    p.style.cursor = 'pointer';
+                    p.onclick = (e) => {
+                        if (p.classList.contains('right')) {
+                            // next
+                            goNext();
+                        } else if (p.classList.contains('left')) {
+                            // prev
+                            goPrev();
+                        }
+                    };
+                });
+            } else {
+                // desktop: restore stacked layout
+                allPages.forEach(p => {
+                    p.style.display = '';
+                    p.classList.remove('left', 'right');
+                    p.onclick = null; // let inline handlers work (flipPage)
+                });
+                // reset z-indexes
+                document.querySelectorAll('.page').forEach((page, index, pages) => {
+                    page.style.zIndex = pages.length - index;
+                });
+            }
+        }
+
+        window.addEventListener('load', arrangeForViewport);
+        window.addEventListener('resize', arrangeForViewport);
 
         // Particle System
         const canvas = document.getElementById('particleCanvas');
